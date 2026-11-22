@@ -1,0 +1,49 @@
+name: Build Quick Shelf
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build single EXE
+        shell: pwsh
+        run: dotnet publish QuickShelf.csproj -c Release -r win-x64 --self-contained true -o publish
+      - name: Verify output
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem publish -File -Recurse)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'QuickShelf.exe') {
+            Get-ChildItem publish -Recurse
+            throw 'Expected only QuickShelf.exe in publish output.'
+          }
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickShelf-win-x64
+          path: publish/QuickShelf.exe
+          if-no-files-found: error
+      - name: Attach EXE to release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$env:RELEASE_TAG" "publish/QuickShelf.exe" --clobber
